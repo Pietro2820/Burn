@@ -1,6 +1,6 @@
 import sqlite3
+from datetime import datetime
 
-# 1. Conexão e Criação da Gaveta
 conn = sqlite3.connect('burn.db')
 cursor = conn.cursor()
 
@@ -9,10 +9,16 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS usuarios (
     nome TEXT,
     ultima_disposicao INTEGER
 )''')
+
+cursor.execute('''CREATE TABLE IF NOT EXISTS historico_burn (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome_usuario TEXT,
+    data_hora TEXT,
+    disposicao INTEGER,
+    tarefa_sugerida TEXT
+)''')
 conn.commit()
 
-# 2. O Burn tenta lembrar de você
-# (Corrigido o espaço e as aspas duplas)
 cursor.execute("SELECT nome, ultima_disposicao FROM usuarios ORDER BY id DESC LIMIT 1")
 usuario_salvo = cursor.fetchone()
 
@@ -29,14 +35,13 @@ else:
     eh_usuario_novo = True
     print(f"Prazer, {nome}! Vou te cadastrar na minha memória.")
 
-# 3. Avaliando a disposição (Seu código original estava ótimo aqui!)
 print("\nNesse projeto vamos avaliar seu nível de disposição.")
 print("Digite 1- baixa, 2- média ou 3- alta.")
 
-tarefa = "" # Criamos a variável vazia antes para evitar o "Bug 4"
+tarefa = ""
 
 while True:
-    try: # Adicionei o try/except para ele não quebrar se digitar letra!
+    try:
         disposicao = int(input())
         
         if disposicao == 1:
@@ -53,17 +58,42 @@ while True:
     except ValueError:
         print("Ei! Digite apenas números (1, 2 ou 3).")
 
-# 4. O Pulo do Gato: Salvar no Banco (Corrigindo o Bug 3)
 if eh_usuario_novo:
-    # Se é novo, a gente CRIA (INSERT) já com a disposição
     cursor.execute("INSERT INTO usuarios (nome, ultima_disposicao) VALUES (?, ?)", (nome, disposicao))
 else:
-    # Se já existe, a gente ATUALIZA (UPDATE) a disposição
     cursor.execute("UPDATE usuarios SET ultima_disposicao = ? WHERE nome = ?", (disposicao, nome))
-    
+
+hoje_agora = datetime.now().strftime("%d/%m/%Y às %H:%M")
+
+cursor.execute('''
+    INSERT INTO historico_burn (nome_usuario, data_hora, disposicao, tarefa_sugerida) 
+    VALUES (?, ?, ?, ?)
+''', (nome, hoje_agora, disposicao, tarefa))
+
 conn.commit()
 
 print(f"\nEntendi! Sua tarefa de hoje é: {tarefa}.")
-print("Estou salvando isso para o seu histórico. Boa sorte!")
+print(f"Registrei isso no meu diário em: {hoje_agora}.")
 
+print("\n" + "="*60)
+print("📊 SEU HISTÓRICO COMPLETO")
+print("="*60)
+
+cursor.execute('''
+    SELECT data_hora, disposicao, tarefa_sugerida 
+    FROM historico_burn 
+    WHERE nome_usuario = ? 
+    ORDER BY id ASC
+''', (nome,))
+
+historico = cursor.fetchall()
+
+total_registros = len(historico)
+print(f"\n{nome}, você tem {total_registros} registro(s) no total:\n")
+
+for i, registro in enumerate(historico, 1):
+    print(f"#{i} | {registro[0]} | Disposição: {registro[1]} | Tarefa: {registro[2]}")
+
+print("\n" + "="*60)
+print("Burn desligando... Até a próxima!")
 conn.close()

@@ -1,21 +1,61 @@
-# 🧠 Diário de Aprendizado - Burn v2.0
+```markdown
+## 🧠 O que eu aprendi com a v3.0
 
-Nesta versão, o projeto evoluiu de um script simples para um sistema com **persistência de dados**. Aqui estão os principais conceitos de Backend que aprendi e apliquei:
+Nessa versão eu fui além do básico e coloquei o Burn pra lembrar de TUDO que aconteceu. Aqui tá o que eu aprendi no processo:
 
-### 1. Persistência de Dados com SQLite (`sqlite3`)
-Aprendi que um programa sem banco de dados "esquece" tudo quando é fechado. Com o módulo nativo `sqlite3` do Python, criei um arquivo local (`burn.db`) que atua como a memória de longo prazo do assistente, sem precisar instalar servidores complexos.
+### 1. Separar as coisas em tabelas diferentes
+Entendi que não dá pra jogar tudo numa gaveta só. Criei duas tabelas:
+- **`usuarios`**: Guarda quem é a pessoa (nome, última disposição)
+- **`historico_burn`**: Guarda cada interação com data, hora, disposição e tarefa
 
-### 2. Modelagem de Banco de Dados (`CREATE TABLE`)
-Entendi a importância de criar a estrutura de dados (a "gaveta") de forma segura, usando `CREATE TABLE IF NOT EXISTS`. Isso garante que o programa possa ser rodado múltiplas vezes sem dar erro de "tabela já existe".
+Isso se chama modelagem relacional e é como sistemas reais funcionam.
 
-### 3. A Arte da Busca (`SELECT` + `ORDER BY` + `LIMIT`)
-Aprendi a fazer consultas inteligentes. Em vez de baixar todos os dados, usei `ORDER BY id DESC LIMIT 1` para buscar apenas o **último registro** salvo, identificando rapidamente se o usuário já é conhecido pelo sistema.
+### 2. Trabalhar com datas (`datetime`)
+Aprendi a usar o módulo `datetime` do Python pra pegar a data e hora atual e formatar do jeito que eu queria. Antes eu não sabia que dava pra fazer isso de forma tão simples.
 
-### 4. A Regra de Ouro: INSERT vs UPDATE
-Esta foi a lição mais valiosa:
-- **`INSERT`**: Usado para **criar** um novo registro no banco (ex: quando o usuário usa o Burn pela primeira vez).
-- **`UPDATE`**: Usado para **modificar** um registro que já existe (ex: quando o usuário volta e só precisa atualizar sua disposição do dia).
-Saber a diferença e aplicar a lógica correta (`if eh_usuario_novo`) evitou bugs críticos de duplicidade de dados.
+### 3. INSERT com várias colunas de uma vez
+Em vez de fazer vários INSERTs separados, aprendi a inserir tudo de uma vez só:
+```sql
+INSERT INTO historico_burn (nome_usuario, data_hora, disposicao, tarefa_sugerida) 
+VALUES (?, ?, ?, ?)
+```
+Muito mais eficiente.
 
-### 5. Robustez e Tratamento de Erros (`try / except`)
-Aprendi a proteger o sistema contra entradas inválidas. O bloco `try / except ValueError` impede que o programa quebre (crash) se o usuário digitar uma letra em vez de um número, guiando-o gentilmente a tentar novamente.
+### 4. Ordenar os resultados
+Aprendi a usar `ORDER BY` pra organizar os dados:
+- `ASC` = do mais antigo pro mais recente
+- `DESC` = do mais recente pro mais antigo
+
+Isso é essencial pra mostrar históricos na ordem certa.
+
+### 5. O `fetchall()` e o `enumerate`
+Descobri que o `fetchall()` retorna uma lista com todos os registros do banco. E que posso usar `enumerate(lista, 1)` pra numerar cada item automaticamente enquanto passo por eles com `for`.
+
+### 6. Contar quantos registros tem
+Com `len(historico)` eu consigo contar quantos registros foram retornados e mostrar pro usuário ("você tem X registro(s) no total").
+
+### 7. Deixar a saída bonitinha
+Aprendi a formatar os dados de forma organizada:
+```python
+print(f"#{i} | {registro[0]} | Disposição: {registro[1]} | Tarefa: {registro[2]}")
+```
+Transforma dados brutos em algo legível.
+
+### 8. A ordem das coisas importa
+Entendi que primeiro eu salvo (INSERT), depois eu busco (SELECT). Se eu buscar antes de salvar, não vou ver o registro atual. Parece óbvio, mas eu errei isso no começo.
+
+---
+
+### 🎯 O que eu sei fazer agora:
+
+- Criar e conectar em bancos de dados SQLite
+- Modelar múltiplas tabelas
+- Fazer INSERT, UPDATE e SELECT
+- Trabalhar com datas e horas
+- Ordenar resultados
+- Iterar sobre listas de registros
+- Contar e numerar registros
+- Formatar saídas de forma profissional
+
+Isso é Backend de verdade! 🚀
+```
