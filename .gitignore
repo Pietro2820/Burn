@@ -3,7 +3,7 @@
 .env.local
 
 # Banco de dados local
-*.db
+*burn.db
 *.sqlite
 *.sqlite3
 
