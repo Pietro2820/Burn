@@ -1,99 +1,124 @@
 import sqlite3
 from datetime import datetime
+import os
+from dotenv import load_dotenv
+from openai import OpenAI
 
+# Carrega as variáveis do arquivo .env
+load_dotenv()
+
+# ==========================================
+# BURN v4.0 - Assistente com IA (Estrutura Profissional)
+# ==========================================
+
+# 1. SUA ESTRUTURA PREFERIDA (Segura e com base_url da Groq)
+client = OpenAI(
+    api_key=os.environ.get("GROQ_API_KEY"),
+    base_url="https://api.groq.com/openai/v1",
+)
+    
+# 2. Conexão com o banco de dados
 conn = sqlite3.connect('burn.db')
 cursor = conn.cursor()
 
 cursor.execute('''CREATE TABLE IF NOT EXISTS usuarios (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nome TEXT,
-    ultima_disposicao INTEGER
+    nome TEXT
 )''')
 
 cursor.execute('''CREATE TABLE IF NOT EXISTS historico_burn (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     nome_usuario TEXT,
     data_hora TEXT,
-    disposicao INTEGER,
-    tarefa_sugerida TEXT
+    mensagem_usuario TEXT,
+    resposta_burn TEXT
 )''')
 conn.commit()
 
-cursor.execute("SELECT nome, ultima_disposicao FROM usuarios ORDER BY id DESC LIMIT 1")
+# 3. Verifica usuário
+cursor.execute("SELECT nome FROM usuarios ORDER BY id DESC LIMIT 1")
 usuario_salvo = cursor.fetchone()
-
-eh_usuario_novo = False
 
 if usuario_salvo:
     nome = usuario_salvo[0]
-    ultima_disp = usuario_salvo[1]
-    print(f"Olá novamente, {nome}! Bom ter você de volta.")
-    print(f"Lembro que na última vez sua disposição estava como: {ultima_disp}.")
+    print(f"Olá novamente, {nome}! Sou o Burn, seu assistente com IA. 🤖")
 else:
-    print("Olá! Eu sou o Burn, seu protótipo de assistente virtual.")
-    nome = input("Para começarmos, como devo te chamar? ")
-    eh_usuario_novo = True
-    print(f"Prazer, {nome}! Vou te cadastrar na minha memória.")
+    print("Olá! Eu sou o Burn, seu novo assistente virtual com Inteligência Artificial.")
+    nome = input("Como devo te chamar? ")
+    cursor.execute("INSERT INTO usuarios (nome) VALUES (?)", (nome,))
+    conn.commit()
+    print(f"Prazer, {nome}! Vou lembrar de você a partir de agora. 💾")
 
-print("\nNesse projeto vamos avaliar seu nível de disposição.")
-print("Digite 1- baixa, 2- média ou 3- alta.")
+print("\n" + "="*60)
+print("🔥 MODO CONVERSA ATIVADO")
+print("Digite 'sair' para encerrar.")
+print("="*60 + "\n")
 
-tarefa = ""
-
+# 4. Loop de conversa
 while True:
+    mensagem_usuario = input("Você: ").strip()
+    
+    if mensagem_usuario.lower() in ['sair', 'tchau', 'encerrar']:
+        print("\nBurn: Até mais! Foi ótimo conversar com você. 👋")
+        break
+    
+    if not mensagem_usuario:
+        continue
+
+    # Busca histórico
+    cursor.execute('''
+        SELECT mensagem_usuario, resposta_burn 
+        FROM historico_burn 
+        WHERE nome_usuario = ? 
+        ORDER BY id DESC 
+        LIMIT 5
+    ''', (nome,))
+    historico_recente = cursor.fetchall()
+    
+    # Monta contexto
+    contexto = f"Você é o Burn, um assistente virtual amigável e direto. O usuário se chama {nome}."
+    if historico_recente:
+        contexto += "\n\nHistórico recente:\n"
+        for msg_user, resp_burn in reversed(historico_recente):
+            contexto += f"Você: {msg_user}\nBurn: {resp_burn}\n"
+    
     try:
-        disposicao = int(input())
+        print("Burn está pensando...", end="\r")
         
-        if disposicao == 1:
-            tarefa = "organizar sua mesa de trabalho"
-            break
-        elif disposicao == 2:
-            tarefa = "fazer uma lista de tarefas para o dia"
-            break
-        elif disposicao == 3:
-            tarefa = "estudar um novo assunto ou habilidade"
-            break
-        else:
-            print("Desculpe, não entendi. Digite 1, 2 ou 3.")
-    except ValueError:
-        print("Ei! Digite apenas números (1, 2 ou 3).")
+        # ✅ AQUI USAMOS O MÉTODO GARANTIDO DA GROQ (chat.completions)
+        # E um modelo que sabemos que está ativo e gratuito.
+        response = client.chat.completions.create(
+    model="openai/gpt-oss-20b",   # <- modelo atualizado
+    messages=[
+        {"role": "system", "content": contexto},
+        {"role": "user", "content": mensagem_usuario}
+    ],
+    temperature=0.7,
+    max_tokens=500
+)
+        
+        # Extrai a resposta (equivalente ao output_text que você queria)
+        resposta_burn = response.choices[0].message.content
+        print(" " * 30, end="\r") # Limpa o "pensando"
+        
+        # Salva no banco
+        hoje_agora = datetime.now().strftime("%d/%m/%Y às %H:%M")
+        cursor.execute('''
+            INSERT INTO historico_burn 
+            (nome_usuario, data_hora, mensagem_usuario, resposta_burn) 
+            VALUES (?, ?, ?, ?)
+        ''', (nome, hoje_agora, mensagem_usuario, resposta_burn))
+        conn.commit()
+        
+        print(f"Burn: {resposta_burn}\n")
+        
+    except Exception as e:
+        print(" " * 30, end="\r")
+        print("\n" + "="*60)
+        print("🚨 ERRO NA API")
+        print(f"Detalhe: {e}")
+        print("Dica: Verifique se o arquivo .env está na pasta e tem a chave GROQ_API_KEY")
+        print("="*60 + "\n")
+        break
 
-if eh_usuario_novo:
-    cursor.execute("INSERT INTO usuarios (nome, ultima_disposicao) VALUES (?, ?)", (nome, disposicao))
-else:
-    cursor.execute("UPDATE usuarios SET ultima_disposicao = ? WHERE nome = ?", (disposicao, nome))
-
-hoje_agora = datetime.now().strftime("%d/%m/%Y às %H:%M")
-
-cursor.execute('''
-    INSERT INTO historico_burn (nome_usuario, data_hora, disposicao, tarefa_sugerida) 
-    VALUES (?, ?, ?, ?)
-''', (nome, hoje_agora, disposicao, tarefa))
-
-conn.commit()
-
-print(f"\nEntendi! Sua tarefa de hoje é: {tarefa}.")
-print(f"Registrei isso no meu diário em: {hoje_agora}.")
-
-print("\n" + "="*60)
-print("📊 SEU HISTÓRICO COMPLETO")
-print("="*60)
-
-cursor.execute('''
-    SELECT data_hora, disposicao, tarefa_sugerida 
-    FROM historico_burn 
-    WHERE nome_usuario = ? 
-    ORDER BY id ASC
-''', (nome,))
-
-historico = cursor.fetchall()
-
-total_registros = len(historico)
-print(f"\n{nome}, você tem {total_registros} registro(s) no total:\n")
-
-for i, registro in enumerate(historico, 1):
-    print(f"#{i} | {registro[0]} | Disposição: {registro[1]} | Tarefa: {registro[2]}")
-
-print("\n" + "="*60)
-print("Burn desligando... Até a próxima!")
 conn.close()

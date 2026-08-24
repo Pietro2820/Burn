@@ -1,9 +1,25 @@
+# Variáveis de ambiente e chaves de API
+.env
+.env.local
+
 # Banco de dados local
-burn.db
+*.db
+*.sqlite
+*.sqlite3
 
-# Arquivos temporários do Python
+# Arquivos de cache do Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
 
-# Arquivos de teste
-testes.py
+# Ambientes virtuais
+venv/
+env/
+.venv/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
