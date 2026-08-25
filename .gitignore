@@ -21,5 +21,65 @@ env/
 # IDEs
 .vscode/
 .idea/
+*.swp# ── Variáveis de ambiente e chaves de API ────────────────────────────
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+
+# ── Banco de dados local ─────────────────────────────────────────────
+*burn.db
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# ── Áudio gerado/temporário (TTS, gravações do microfone) ───────────
+*.wav
+*.mp3
+!assets/**/*.wav
+!assets/**/*.mp3
+tmp_audio/
+recordings/
+
+# ── Arquivos de cache e build do Python ──────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# ── Ambientes virtuais ────────────────────────────────────────────────
+venv/
+env/
+.venv/
+ENV/
+
+# ── Logs ──────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── IDEs e editores ───────────────────────────────────────────────────
+.vscode/
+.idea/
 *.swp
+*.swo
+*~
+
+# ── Sistema operacional ──────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Jupyter / notebooks (se usar pra testes) ─────────────────────────
+.ipynb_checkpoints/
+
+# ── Testes e cobertura ────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
 *.swo
