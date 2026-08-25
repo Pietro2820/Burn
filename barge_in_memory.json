@@ -1,0 +1,8 @@
+{
+  "noise_floor_ema": 0.010239469439544738,
+  "vad_margin": 7.331523840000001,
+  "mu_base": 0.1842375,
+  "interrupcoes_precoces_seguidas": 0,
+  "reproducoes_completas_seguidas": 0,
+  "total_sessoes": 52
+}

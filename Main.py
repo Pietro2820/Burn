@@ -2,7 +2,6 @@ import sqlite3
 from datetime import datetime
 import os
 import tempfile
-import wave
 import asyncio
 import uuid
 import re
@@ -11,15 +10,17 @@ import numpy as np
 from dotenv import load_dotenv
 from openai import OpenAI
 import edge_tts
-import pygame
 import sounddevice as sd
 from scipy.io.wavfile import write as write_wav
+
+from barge_in import BargeInPlayer, load_audio_as_float32
+from cache_semantico import CacheSemantico
 
 # Carrega as variáveis do arquivo .env
 load_dotenv()
 
 # ==========================================
-# BURN v5.0 - Assistente com IA + Voz
+# BURN v5.2 - Assistente com IA + Voz + Interrupção
 # ==========================================
 
 # 1. Cliente Groq (mesma chave usada pro chat E pro Whisper)
@@ -29,8 +30,17 @@ client = OpenAI(
 )
 
 # 2. Engine de voz (TTS) - edge-tts, voz neural natural em português do Brasil
-pygame.mixer.init()
 VOZ_BURN = "pt-BR-AntonioNeural"  # outras opções: pt-BR-FranciscaNeural (feminina)
+
+# samplerate usado tanto na gravação quanto na reprodução com barge-in
+# (precisam ser iguais pro cancelamento de eco funcionar)
+TAXA_AMOSTRAGEM = 16000
+
+barge_in_player = BargeInPlayer(samplerate=TAXA_AMOSTRAGEM)
+
+# Cache local de respostas por similaridade semântica — perguntas parecidas
+# com algo já respondido antes são respondidas na hora, sem chamar a API.
+cache_semantico = CacheSemantico()
 
 PADRAO_EMOJI = re.compile(
     "["
@@ -50,33 +60,69 @@ def remover_emojis(texto):
     # tira espaços duplos que podem sobrar no lugar do emoji removido
     return re.sub(r"[ \t]{2,}", " ", texto_limpo).strip()
 
-async def _gerar_audio_fala(texto, caminho_saida):
-    comunicador = edge_tts.Communicate(texto, voice=VOZ_BURN)
-    await comunicador.save(caminho_saida)
+async def _gerar_audio_fala(texto, caminho_saida, tentativas=3):
+    """
+    Gera o áudio via edge-tts. De vez em quando o serviço da Microsoft
+    devolve um arquivo praticamente vazio sem lançar nenhum erro — geralmente
+    instabilidade de rede do lado deles — e aí o ffmpeg trava tentando
+    decodificar um mp3 inválido. Por isso confere o tamanho do arquivo
+    depois de gerar, e tenta de novo antes de desistir.
+    """
+    TAMANHO_MINIMO_VALIDO = 800  # bytes — abaixo disso, o arquivo veio vazio/corrompido
+    ultimo_erro = None
+
+    for tentativa in range(1, tentativas + 1):
+        try:
+            comunicador = edge_tts.Communicate(texto, voice=VOZ_BURN)
+            await comunicador.save(caminho_saida)
+            if os.path.exists(caminho_saida) and os.path.getsize(caminho_saida) >= TAMANHO_MINIMO_VALIDO:
+                return  # deu certo
+            ultimo_erro = "o edge-tts devolveu um arquivo de áudio vazio/pequeno demais"
+        except Exception as e:
+            ultimo_erro = str(e)
+
+        if tentativa < tentativas:
+            print(f"(TTS falhou na tentativa {tentativa}, tentando de novo...)", end="\r")
+            await asyncio.sleep(0.6 * tentativa)  # espera um pouco mais a cada nova tentativa
+
+    raise RuntimeError(f"não consegui gerar o áudio do TTS após {tentativas} tentativas ({ultimo_erro})")
 
 def falar(texto):
-    """Faz o Burn falar em voz alta usando uma voz neural (edge-tts)."""
+    """
+    Faz o Burn falar em voz alta usando uma voz neural (edge-tts).
+    Se a pessoa começar a falar por cima, a reprodução é interrompida
+    na hora (cancelamento de eco + detecção de voz via barge_in.py).
+    """
     print(f"Burn: {texto}\n")
 
     # nome único por fala, pra evitar 'Permission denied' no Windows
-    # (o pygame mantém o arquivo anterior travado por um tempo depois de tocar)
     nome_arquivo = f"burn_fala_{uuid.uuid4().hex}.mp3"
     caminho_audio = os.path.join(tempfile.gettempdir(), nome_arquivo)
 
-    asyncio.run(_gerar_audio_fala(texto, caminho_audio))
+    # calibra o microfone (ruído de fundo) EM PARALELO com a geração do
+    # áudio do TTS, que depende da internet e costuma ser a parte mais
+    # lenta — assim não fica esperando a calibração só depois que o TTS
+    # já terminou
+    calibracao = barge_in_player.iniciar_calibracao()
 
-    pygame.mixer.music.load(caminho_audio)
-    pygame.mixer.music.play()
-    while pygame.mixer.music.get_busy():
-        pygame.time.Clock().tick(10)
+    try:
+        asyncio.run(_gerar_audio_fala(texto, caminho_audio))
+    except Exception as e:
+        print(f"\n(Não consegui gerar a fala agora — o TTS falhou mesmo após tentar de novo: {e})\n")
+        return  # não trava o programa, só pula essa fala
 
-    pygame.mixer.music.unload()  # libera o arquivo pra poder ser apagado
+    audio_array = load_audio_as_float32(caminho_audio, samplerate=TAXA_AMOSTRAGEM)
+    interrompido = barge_in_player.play(audio_array, calibracao=calibracao)
+
+    if interrompido:
+        print("(Percebi que você começou a falar — parei de falar.)\n")
+
     try:
         os.remove(caminho_audio)
     except OSError:
         pass  # se não conseguir apagar, não é grave, só sobra lixo no temp
 
-def gravar_audio(taxa_amostragem=16000, limiar_silencio=1400, duracao_silencio=1.2,
+def gravar_audio(taxa_amostragem=TAXA_AMOSTRAGEM, limiar_silencio=1400, duracao_silencio=0.7,
                   duracao_maxima=20, tamanho_bloco=0.1):
     """
     Fica escutando o microfone e só começa a gravar quando detecta que a pessoa
@@ -178,6 +224,7 @@ else:
 print("\n" + "="*60)
 print("MODO CONVERSA ATIVADO (voz + texto)")
 print("Digite 'sair' para encerrar, ou 'voz' para falar com o Burn.")
+print("Você pode interromper o Burn a qualquer momento, só falando.")
 print("="*60 + "\n")
 
 # 5. Loop de conversa
@@ -251,21 +298,31 @@ Responda sempre em português do Brasil."""
             contexto += f"Você: {msg_user}\nBurn: {resp_burn}\n"
 
     try:
-        print("Burn está pensando...", end="\r")
+        # antes de gastar uma chamada de API, vê se uma pergunta parecida
+        # já foi respondida antes pra esse usuário
+        resposta_burn = cache_semantico.buscar(mensagem_usuario, nome)
 
-        response = client.chat.completions.create(
-            model="openai/gpt-oss-20b",
-            messages=[
-                {"role": "system", "content": contexto},
-                {"role": "user", "content": mensagem_usuario}
-            ],
-            temperature=0.7,
-            max_tokens=500
-        )
+        if resposta_burn is not None:
+            print("(resposta do cache local — sem chamada de API)")
+        else:
+            print("Burn está pensando...", end="\r")
 
-        resposta_burn = response.choices[0].message.content
-        resposta_burn = remover_emojis(resposta_burn)
-        print(" " * 30, end="\r")
+            response = client.chat.completions.create(
+                model="openai/gpt-oss-20b",
+                messages=[
+                    {"role": "system", "content": contexto},
+                    {"role": "user", "content": mensagem_usuario}
+                ],
+                temperature=0.7,
+                max_tokens=250
+            )
+
+            resposta_burn = response.choices[0].message.content
+            resposta_burn = remover_emojis(resposta_burn)
+            print(" " * 30, end="\r")
+
+            # guarda essa pergunta+resposta no cache pra próxima vez
+            cache_semantico.salvar(mensagem_usuario, resposta_burn, nome)
 
         # Salva no banco
         hoje_agora = datetime.now().strftime("%d/%m/%Y às %H:%M")
@@ -288,3 +345,4 @@ Responda sempre em português do Brasil."""
         break
 
 conn.close()
+cache_semantico.fechar()
